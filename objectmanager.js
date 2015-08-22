@@ -36,6 +36,8 @@ define(['intrusivelist','dintrusivelist'],function(IntrusiveList,DIntrusiveList)
 			// console.log('handlePending',me.pendingAdd.root);
 		}
 		me.pendingAdd.each(function(o,_,DELETE) {
+			console.assert(!o._objectmanager);
+			o._objectmanager = me;
 			me.objects.push(o);
 			for(var n in me.lists) {
 				if (o[me.lists[n].property]) {
@@ -52,6 +54,8 @@ define(['intrusivelist','dintrusivelist'],function(IntrusiveList,DIntrusiveList)
 		});
 		me.pendingRemove.each(function(o,_,DELETE) {
 			delete o.__pendingRemove;
+			console.assert(o._objectmanager === me);
+			o._objectmanager = null;
 			me.objects.remove(o);
 			for(var n in me.lists) {
 				if (o[me.lists[n].property]) {

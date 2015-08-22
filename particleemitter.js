@@ -7,9 +7,9 @@ define(function() {
 		this.image = image;
 		this.spawnrate = spawnrate;
 		this.spawntime = spawnrate;
-		this.initializeParticle = initializeParticle;
-		this.updateParticle = updateParticle || ParticleEmitter.defaultUpdate;
-		this.drawParticle = drawParticle || ParticleEmitter.defaultDraw;
+		this.initializeParticle = initializeParticle || this.initializeParticle;
+		this.updateParticle = updateParticle || this.updateParticle || ParticleEmitter.defaultUpdate;
+		this.drawParticle = drawParticle || this.drawParticle || ParticleEmitter.defaultDraw;
 	}
 	var p = ParticleEmitter.prototype;
 	p['updatable'] = true;
@@ -29,7 +29,7 @@ define(function() {
 		for(i=0;i<particles.length;i++) {
 			var p = particles[i];
 			if (!p.active) { continue; }
-			updateParticle(p,dt);
+			updateParticle.call(this,p,dt);
 		}
 	};
 	p.spawn = function(count) {
@@ -39,7 +39,7 @@ define(function() {
 		for(i=0;i<particles.length && spawnCount < count;i++) {
 			if (!particles[i].active) {
 				particles[i].active = true;
-				initializeParticle(particles[i]);
+				initializeParticle.call(this,particles[i]);
 				spawnCount++;
 			}
 		}

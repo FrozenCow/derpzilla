@@ -32,7 +32,7 @@ define(['eventemitter','objectmanager','graphics'], function(eventemitter,Object
 			next(g);
 		});
 
-		this.chains.update.push(this.chains.update.objects = function(dt,next) {
+		this.chains.update.push(this.chains.update.objects = function updateObjects(dt,next) {
 			me.objects.lists.update.each(function(o) {
 				o.update(dt);
 			});

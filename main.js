@@ -2,7 +2,14 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
     var t = new Vector(0, 0);
     var t2 = new Vector(0, 0);
     var rs = {
-        'images': ['test'],
+        'images': ['test','ground',
+            'monster_body_idle', 'monster_body_fire',
+            'monster_feet1', 'monster_feet2', 'monster_feet3', 'monster_feet4',
+            'monster_feet_jump',
+            'fire1', 'fire2', 'fire3', 'fireball',
+            'building1','building2','building3','building4','building5','building6',
+            'smoke1','smoke2','smoke3','smoke4','smoke5',
+        ],
         'audio': ['test']
     };
     var g, game;
@@ -30,7 +37,9 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
             a.volume = 0.6;
         }
 
-        g.objects.lists.particle = g.objects.createIndexList('particle');
+        g.objects.lists.weight = g.objects.createIndexList('weight');
+        g.objects.lists.collidable = g.objects.createIndexList('collidable');
+        g.objects.lists.temporary = g.objects.createIndexList('temporary');
         g.objects.lists.spring = g.objects.createIndexList('spring');
         g.objects.lists.start = g.objects.createIndexList('start');
         g.objects.lists.finish = g.objects.createIndexList('finish');
@@ -51,21 +60,56 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
              enabled: true,
              enable: enable,
              disable: disable,
-             toggle: toggle
+             toggle: toggle,
+             force: 0.5
          };
          function enable() { me.enabled = true; }
          function disable() { me.enabled = false; }
          function toggle() { if (me.enabled) disable(); else enable(); }
          function update(dt,next) {
-             g.objects.lists.particle.each(function(p) {
+             g.objects.lists.weight.each(function(p) {
                  if (me.enabled) {
-                     p.velocity.y += 200*dt;
+                     p.velocity.y += me.force * p.weight;
                  }
              });
              next(dt);
          }
          g.chains.update.push(update);
          return me;
+        })();
+
+        // Ground-plane collision
+        (function() {
+            g.chains.update.push(function(dt, next) {
+                g.objects.lists.collidable.each(function(c) {
+                    if (c.position.y + c.collisionRadius > 0 && c.velocity.y > 0) {
+                        c.position.y = -c.collisionRadius+1;
+                        c.velocity.y = 0;
+                        if (!c.onground) {
+                            if (c.onlanded) {
+                                c.onlanded();
+                            }
+                            c.onground = true;
+                        }
+                    } else {
+                        c.onground = false;
+                    }
+                });
+                next(dt);
+            });
+        })();
+
+        // Remove out-of-screen temporary objects
+        (function() {
+            g.chains.update.push(function(dt, next) {
+                next(dt);
+                g.objects.lists.temporary.each(function(o) {
+                    if (   o.position.x > game.camera.x + game.width*2
+                        || o.position.x < game.camera.x - game.width) {
+                        game.objects.remove(o);
+                    }
+                });
+            });
         })();
         // Auto-refresh
         // (function() {
@@ -98,6 +142,8 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
             game.camera.PTM = 1;
             game.camera.x = -(game.width * 0.5) / getPixelsPerMeter();
             game.camera.y = (game.height * 0.5) / getPixelsPerMeter();
+            game.camera.smoothx = game.camera.x;
+            game.camera.smoothy = game.camera.x;
             game.camera.screenToWorld = function(screenV, out) {
                 var ptm = getPixelsPerMeter();
                 out.x = screenV.x / ptm + game.camera.x;
@@ -114,13 +160,11 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
                 return game.camera.PTM / game.camera.zoom;
             }
             game.camera.reset = function() {
-                var ptm = getPixelsPerMeter();
-                var targetx = player.position.x - (game.width * 0.5) / ptm;
-                var targety = player.position.y + (game.height * 0.5) / ptm;
-                targetx += player.velocity.x * 10;
-                targety += player.velocity.y * 10;
-                game.camera.x = targetx;
-                game.camera.y = targety;
+                updateCamera(0.001);
+                game.camera.x = game.camera.targetx;
+                game.camera.y = game.camera.targety;
+                game.camera.smoothx = game.camera.x;
+                game.camera.smoothy = game.camera.y;
             };
             var pattern;
 
@@ -132,35 +176,39 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
                 // g.fillRectangle(x*ptm,-y*ptm,game.width,game.height);
                 // g.restore();
                 g.save();
-                g.context.scale(ptm, -ptm);
+                g.context.scale(ptm, ptm);
                 g.context.lineWidth /= ptm;
-                g.context.translate(-game.camera.x, -game.camera.y);
+                g.context.translate(-game.camera.x, game.camera.y);
                 next(g);
                 g.restore();
             }
 
-            function updateCamera(dt, next) {
-                next(dt);
+            function updateCamera(dt) {
                 var ptm = getPixelsPerMeter();
                 // if (!pattern) {
                 //   pattern = g.context.createPattern(images.background,'repeat');
                 // }
                 // Follow player
-                var targetx = player.position.x - (game.width * 0.5) / ptm;
-                var targety = (game.height * 0.5) / ptm;
+                var targetx = game.camera.targetx = player.position.x - (game.width * 0.1) / ptm;
+                var targety = game.camera.targety = (game.height * 0.9) / ptm;
                 // Look forward
                 // targetx += player.velocity.x * 10;
                 // targety += player.velocity.y * 10;
                 // Smooth
-                // game.camera.x = 0.8 * game.camera.x + 0.2 * targetx;
-                // game.camera.y = 0.8 * game.camera.y + 0.2 * targety;
+                var smoothx = game.camera.smoothx = 0.99 * game.camera.smoothx + 0.01 * targetx;
+                var smoothy = game.camera.smoothy = 0.99 * game.camera.smoothy + 0.01 * targety;
+
+                game.camera.x = Math.floor(smoothx);
+                game.camera.y = Math.floor(smoothy);
                 // No smoothing
-                game.camera.x = Math.max(game.camera.x+1, targetx);
-                game.camera.y = targety;
+                // game.camera.x = targetx;
+                // game.camera.y = targety;
             }
 
-            g.chains.update.camera = updateCamera;
-            g.chains.update.push(updateCamera);
+            g.chains.update.push(g.chains.update.camera = function(dt, next) {
+                next(dt);
+                updateCamera(dt);
+            });
 
             g.chains.draw.camera = drawCamera;
             g.chains.draw.insertBefore(drawCamera, g.chains.draw.objects);
@@ -168,11 +216,22 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
 
         // Draw background
         // (function() {
+        //     game.chains.draw.insertAfter(function(g,next) {
+        //         var image = images.ground;
+        //         var xstart = Math.floor(game.camera.x / image.width) * image.width;
+        //         var xend = Math.floor((game.camera.x + game.width) / image.width) * image.width + image.width;
+
+        //         var y = -image.height * 0.5;
+        //         for(var x = xstart;x < xend; x += image.width) {
+        //             g.drawImage(image, x, y);
+        //         }
+        //         next(g);
+        //     }, game.chains.draw.camera);
         //     game.chains.draw.insertBefore(function(g,next) {
-        //         fill(g,images.background, game.camera.x * 0.5, game.camera.y, game.width, game.height);
-        //         g.translate(0,game.height-images.mountains.height+100,function() {
-        //             fill(g,images.mountains, game.camera.x * 0.8, game.camera.y, game.width, 0);
-        //         });
+        //         // fill(g,images.background, game.camera.x * 0.5, game.camera.y * 0.5, game.width, game.height);
+        //         // g.translate(0,game.height-images.mountains.height+100,function() {
+        //         //     fill(g,images.mountains, game.camera.x * 0.8, game.camera.y, game.width, 0);
+        //         // });
         //         next(g);
         //     },game.chains.draw.camera);
 
@@ -185,6 +244,17 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
         //         }
         //         }
         //     }
+        // })();
+
+        // Draw debug objects
+        // (function() {
+        //     game.chains.draw.insertAfter(function(g,next) {
+        //         next(g);
+        //         game.objects.objects.each(function(o) {
+        //             g.strokeStyle('red');
+        //             g.strokeCircle(o.position.x, o.position.y, o.touchRadius || 10);
+        //         });
+        //     }, game.chains.draw.camera);
         // })();
 
         // Collision
@@ -381,6 +451,7 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
                 game.objects.lists.shadow.each(function(o) {
                     o.drawShadow(g);
                 });
+                drawGround(g);
                 game.objects.lists.foreground.each(function(o) {
                     o.drawForeground(g);
                 });
@@ -389,21 +460,60 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
                 // });
                 next(g);
             });
+
+            function drawGround(g) {
+                var image = images.ground;
+                var left = Math.floor(game.camera.x / image.width) * image.width;
+                var right = Math.ceil((game.camera.x + game.width) / image.width) * image.width;
+                for(var x=left; x<=right;x+=image.width) {
+                    g.drawImage(image, x, -300);
+                }
+            }
         })();
-    // Touching
-    (function() {
-        g.objects.lists.touchable = g.objects.createIndexList('touchable');
-        g.chains.update.push(function(dt,next) {
-            g.objects.lists.touchable.each(function(ta) {
-                g.objects.lists.touchable.each(function(tb) {
-                    if (ta.position.distanceToV(tb.position) <= ta.touchRadius+tb.touchRadius) {
-                        if (ta.touch) { ta.touch(tb); }
+
+        // Touching
+        (function() {
+            g.objects.lists.touchable = g.objects.createIndexList('touchable');
+            g.chains.update.insertBefore(function(dt, next) {
+                next(dt);
+                g.objects.lists.touchable.each(function(ta) {
+                    g.objects.lists.touchable.each(function(tb) {
+                        handleTouch(ta, tb);
+                    });
+                    if (ta.touching) {
+                        ta.touching.forEach(function(tb) {
+                            handleTouch(ta, tb);
+                        });
                     }
                 });
-            });
-            next(dt);
-        });
-    })();
+            }, g.chains.update.objects);
+
+            function handleTouch(ta, tb) {
+                if (ta === tb) { return; }
+                var areTouching = ta._objectmanager && tb._objectmanager &&
+                    ta.position.distanceToV(tb.position) <= ta.touchRadius + tb.touchRadius;
+                if (ta.touching) {
+                    var tbWasTouchingTa = ta.touching.indexOf(tb) !== -1;
+                    if (areTouching && !tbWasTouchingTa) {
+                        ta.touching.push(tb);
+                        if (ta.touch) { ta.touch(tb); }
+                    } else if (!areTouching && tbWasTouchingTa) {
+                        ta.touching.remove(tb);
+                        if (ta.untouch) { ta.untouch(tb); }
+                    }
+                }
+                if (tb.touching) {
+                    var taWasTouchingTb = tb.touching.indexOf(ta) !== -1;
+                    if (areTouching && !taWasTouchingTb) {
+                        tb.touching.push(ta);
+                        if (tb.touch) { tb.touch(ta); }
+                    } else if (!areTouching && taWasTouchingTb) {
+                        tb.touching.remove(ta);
+                        if (tb.untouch) { tb.untouch(ta); }
+                    }
+                }
+            }
+        })();
 
         function getAngle(v) {
             return Math.atan2(v.y,v.x);
@@ -437,28 +547,271 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
         function Player() {
             this.position = new Vector(0, 0);
             this.velocity = new Vector(0, 0);
-            this.touchRadius = this.collisionRadius = 10;
+            this.weight = 1;
+            this.touchRadius = this.collisionRadius = 200;
+            this.movement = 0;
+            this.animationtime = 0;
+            this.touching = [];
+            this.onground = true;
         }
         (function(p) {
+            var fireOffset = new Vector(0, -35);
+            var feetFrames = [
+                images.monster_feet1,
+                images.monster_feet2,
+                images.monster_feet3,
+                images.monster_feet4,
+            ];
             p.updatable = true;
             p.foreground = true;
             p.collide = true;
             p.touchable = true;
+            p.collidable = true;
             p.update = function(dt) {
+                if (this.onground) {
+                    this.velocity.x += this.movement * 0.5;
+                    this.velocity.x *= 0.8;
+                } else {
+                    this.velocity.x += this.movement * 0.1;
+                    this.velocity.x *= 0.99;
+                }
+
+                if (Math.abs(this.velocity.x) < 1) {
+                    this.animationtime = 0;
+                } else {
+                    this.animationtime += this.velocity.x * 0.025 + feetFrames.length;
+                }
+                this.position.addV(this.velocity);
+
+                if (this.firing) {
+                    this.firing--;
+                    if (this.firing > 20) {
+                        if (this.firing % 4 === 2) {
+                            game.objects.add(new Fireball(
+                                this.position.x + fireOffset.x,
+                                this.position.y + fireOffset.y + 0));
+                        } else if (this.firing % 4 === 0) {
+                            // game.objects.add(new Fireball(
+                            //     this.position.x + fireOffset.x,
+                            //     this.position.y + fireOffset.y + 40));
+                            // game.objects.add(new Fireball(
+                            //     this.position.x + fireOffset.x,
+                            //     this.position.y + fireOffset.y - 40));
+                        }
+                    }
+                }
             };
             p.draw = function(g) {
             };
             p.drawForeground = function(g) {
+                var pivotx = 40;
+                var pivoty = 20;
+
+                var imagex = this.position.x - pivotx;
+                var imagey = this.position.y - pivoty;
+
+                var leftFoot, rightFoot;
+                if (this.onground) {
+                    leftFoot = feetFrames[Math.ceil(this.animationtime + (feetFrames.length * 0.5)) % feetFrames.length];
+                    rightFoot = feetFrames[Math.ceil(this.animationtime) % feetFrames.length];
+                } else {
+                    leftFoot = images.monster_feet_jump;
+                    rightFoot = images.monster_feet_jump;
+                }
+
+                var body;
+                var bobbing;
+                if (this.firing) {
+                    body = images.monster_body_fire;
+                    bobbing = 0;
+                } else if (this.onground) {
+                    body = images.monster_body_idle;
+                    bobbing = Math.cos(this.animationtime / feetFrames.length * Math.PI * 2) * 2;
+                } else {
+                    body = images.monster_body_idle;
+                    bobbing = 0;
+                }
+
+
+                g.drawCenteredImage(leftFoot, imagex, imagey-10);
+
+                g.drawCenteredImage(body, imagex, imagey + bobbing -10);
+
+                g.drawCenteredImage(rightFoot, imagex, imagey);
             };
             p.touch = function(other) {
                 var me = this;
 
             };
+
+            p.fire = function() {
+                if (this.firing) { return; }
+                game.quake(1, 10);
+                this.firing = 30*2;
+            };
+
+            p.jump = function() {
+                if (!this.onground) { return; }
+                this.velocity.y = -15;
+                console.log('jump')
+            };
+            p.onlanded = function() {
+                this.touching.forEach(function(o) {
+                    if (o.ondestroy) { o.ondestroy(); }
+                });
+                game.quake(0.5, 40);
+            };
         })(Player.prototype);
+
+        function Fireball(x,y) {
+            this.position = new Vector(x,y);
+            this.velocity = new Vector(15,0);
+            this.animationtime = Math.random() * 10;
+            this.touchRadius = 30;
+        }
+        (function(p) {
+            var fireballFrames = [
+                images.fire1, images.fire2, images.fire3, images.fire2
+            ];
+            p.touchable = true;
+            p.updatable = true;
+            p.foreground = true;
+            p.temporary = true;
+            p.update = function(dt) {
+                this.position.addV(this.velocity);
+                this.animationtime += 1/3 * (1+rnd()*0.2);
+            };
+            p.touch = function(other) {
+                if (other.damagable) {
+                    other.damage(this.damage);
+                }
+            };
+            p.drawForeground = function(g) {
+                // var image = fireballFrames[Math.floor(this.animationtime) % fireballFrames.length];
+                // g.drawCenteredImage(image, this.position.x, this.position.y);
+                g.drawCenteredImage(images.fireball, this.position.x, this.position.y);
+            };
+        })(Fireball.prototype);
+
+        function Building(image, x) {
+            this.image = image;
+            this.position = new Vector(x, 0);
+            this.touchRadius = image.width * 0.5;
+        }
+        (function(p) {
+            p.background = true;
+            p.touchable = true;
+            p.temporary = true;
+            p.drawBackground = function(g) {
+                g.drawImage(this.image,
+                    this.position.x - this.image.width * 0.5,
+                    this.position.y - this.image.height + 10
+                    );
+            };
+            p.ondestroy = function() {
+                game.objects.remove(this);
+                game.objects.add(new DestroyedBuilding(this.image, this.position.x));
+            };
+        })(Building.prototype);
+
+        function DestroyedBuilding(image, x) {
+            this.image = image;
+            this.position = new Vector(x, 0);
+            this.touchRadius = 1;
+            this.rotation = rnd() * Math.PI * 0.1;
+            this.height = image.height;
+            this.smokeEmitter = new SmokeEmitter(x, image.width * 0.5);
+        }
+        (function(p) {
+            p.background = true;
+            p.updatable = true;
+            p.temporary = true;
+            p.update = function(dt) {
+                this.height -= 1;
+                if (this.height < 20) {
+                    game.objects.remove(this);
+                }
+                this.smokeEmitter.update(dt);
+            };
+            p.drawBackground = function(g) {
+                var me = this;
+                g.translate(rnd() * 2, me.image.height-me.height, function() {
+                    g.rotate(me.position.x, me.position.y, me.rotation, function() {
+                        Building.prototype.drawBackground.call(me, g);
+                    });
+                });
+                this.smokeEmitter.draw(g);
+            };
+        })(DestroyedBuilding.prototype);
+
+        function SmokeEmitter(x,radius) {
+            this.maxParticles = 5;
+            ParticleEmitter.call(this, null, this.maxParticles, 0);
+            this.position = new Vector(x, 0);
+            this.radius = radius;
+            this.particleIndex = 0;
+            this.left = x - radius;
+            this.particleSeparation = (radius * 2) / this.maxParticles;
+
+            this.spawn(this.maxParticles);
+        }
+        SmokeEmitter.prototype = new ParticleEmitter();
+        (function(p) {
+            p.initializeParticle = function(p) {
+                p.rot = rnd() * Math.PI;
+                p.rotrate = rnd() * Math.PI * 0.3;
+                p.velx = 0;
+                p.vely = 0;
+                p.posx = this.left
+                    + this.particleSeparation * (this.particleIndex % this.maxParticles)
+                    + rnd() * 5;
+                p.posy = 0;
+                p.image = pick(smokeImages);
+                p.time = 10;
+                this.particleIndex++;
+            };
+            p.drawParticle = function(p,g) {
+                g.context.save();
+                g.context.translate(p.posx, p.posy);
+                g.context.rotate(p.rot);
+                g.drawCenteredImage(p.image,0,0);
+                g.context.restore();
+            };
+        })(SmokeEmitter.prototype);
+
+
+        var smokeImages = [
+            images.smoke1,
+            images.smoke2,
+            images.smoke3,
+            images.smoke4,
+            images.smoke5
+        ];
+        var buildingImages = [
+            images.building1,
+            images.building2,
+            images.building3,
+            images.building4,
+            images.building5,
+            images.building6
+        ];
 
         function getAimPosition(t) {
             game.camera.screenToWorld(game.mouse, t);
         }
+
+        // Building spawning
+        (function() {
+            var nextPosition = game.camera.x + game.width + 200;
+            game.chains.update.push(function(dt, next) {
+                var newPosition = game.camera.x + game.width + 200;
+                while(nextPosition < newPosition) {
+                    game.objects.add(new Building(pick(buildingImages), nextPosition));
+                    nextPosition += Math.floor(400 + rnd() * 300);
+                }
+                next(dt);
+            });
+        })();
 
         //#states
         function gameplayState() {
@@ -469,6 +822,7 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
             };
             function enable() {
                 player = new Player(0,0);
+                game.camera.reset();
                 g.objects.add(player);
                 g.chains.update.push(update);
                 // g.chains.draw.insertBefore(draw, g.chains.draw.camera);
@@ -481,6 +835,7 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
                 g.removeListener('keydown',keydown);
             }
 
+            var firing = false;
             function keydown(key) {
                 if (key === 'r') {
                     game.changeState(gameplayState());
@@ -489,7 +844,15 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
                 } else if (key === 't') {
                     audio.test.currentTime = 0;
                     audio.test.play();
+                } else if (key === 'a') {
+                    player.jump();
+                } else if (key === 's') {
+                    player.fire();
                 }
+            }
+
+            function mousedown() {
+                player.fire();
             }
 
             function log(/*...*/) {
@@ -502,6 +865,7 @@ define(['platform', 'game', 'vector', 'staticcollidable', 'linesegment', 'editor
             }
 
             function update(dt, next) {
+                player.movement = (game.keys.right?1:0)-(game.keys.left?1:0);
                 next(dt);
             }
 
